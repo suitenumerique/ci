@@ -1,0 +1,52 @@
+name: Security analysis
+
+"on":
+  workflow_call:
+    inputs:
+      persona:
+        type: string
+        required: false
+        default: regular
+        description: zizmor auditing persona, 'regular', 'pedantic' or 'auditor'
+      min_severity:
+        type: string
+        required: false
+        default: ""
+        description: Minimum severity to report ('informational', 'low', 'medium', 'high'); empty reports everything
+      config:
+        type: string
+        required: false
+        default: ""
+        description: Path to a zizmor configuration file in the calling repository (e.g. .github/zizmor.yml)
+      advanced_security:
+        type: boolean
+        required: false
+        default: true
+        description: >-
+          Upload the findings to the repository's Security tab (code scanning).
+          When false, findings are reported as annotations on the workflow run instead.
+
+permissions: {}
+
+jobs:
+  zizmor:
+    name: Audit GitHub Actions workflows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # needed by the SARIF upload on private repositories
+      security-events: write # upload the SARIF report to code scanning
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run zizmor 🌈
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          persona: ${{ inputs.persona }}
+          min-severity: ${{ inputs.min_severity }}
+          config: ${{ inputs.config }}
+          advanced-security: ${{ inputs.advanced_security }}
+          annotations: ${{ !inputs.advanced_security }}

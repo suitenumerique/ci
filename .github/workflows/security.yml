@@ -1,0 +1,19 @@
+name: Security analysis
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - "**"
+
+permissions: {}
+
+jobs:
+  zizmor:
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    uses: ./.github/workflows/_zizmor.yml
