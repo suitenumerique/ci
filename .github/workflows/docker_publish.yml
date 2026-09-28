@@ -71,14 +71,6 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ${{ inputs.image_name }}
-      - name: Run trivy scan
-        if: ${{ vars.TRIVY_SCAN_ENABLED }} == 'true'
-        uses: numerique-gouv/action-trivy-cache@main
-        with:
-          docker-build-args: "${{ inputs.target != '' && format('--target {0} ', inputs.target) || '' }}-f ${{ inputs.file }}"
-          docker-image-name: "docker.io/${{ inputs.image_name }}:${{ github.sha }}"
-          docker-context: ${{ inputs.context }}
-          trivyignores: ./.github/.trivyignore
       - name: Build and push
         id: build-push
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
