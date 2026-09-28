@@ -1,5 +1,5 @@
-name: 'Specific helmfile linter'
-description: 'This action validate all environments in a helmfile with sops secret'
+name: 'Trivy image scan'
+description: 'Build a Docker image and scan it with Trivy for HIGH and CRITICAL vulnerabilities'
 inputs:
   docker-build-args:
     description: 'The docker build args without -t'
@@ -20,15 +20,21 @@ runs:
   steps:
     -
       name: Build an image from Dockerfile
-      run: |
-         docker build ${{ inputs.docker-build-args }} -t ${{ inputs.docker-image-name }} ${{ inputs.docker-context }}
       shell: bash
+      env:
+        DOCKER_BUILD_ARGS: ${{ inputs.docker-build-args }}
+        DOCKER_IMAGE_NAME: ${{ inputs.docker-image-name }}
+        DOCKER_CONTEXT: ${{ inputs.docker-context }}
+      run: |
+        # The build args are a list of options, split on purpose
+        # shellcheck disable=SC2086
+        docker build ${DOCKER_BUILD_ARGS} -t "${DOCKER_IMAGE_NAME}" "${DOCKER_CONTEXT}"
     -
       name: Get Date
       id: get-date
-      run: |
-        echo "date=$(/bin/date -u "+%Y%m%d")" >> $GITHUB_OUTPUT
       shell: bash
+      run: |
+        echo "date=$(/bin/date -u "+%Y%m%d")" >> "${GITHUB_OUTPUT}"
     -
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
@@ -49,6 +55,9 @@ runs:
     -
       name: Fix trivy cache folder permission
       if: always()
-      run: |
-        sudo chown -R $DOCKER_USER trivy
       shell: bash
+      run: |
+        # Let the runner user save the cache, whatever user wrote it
+        if [ -d trivy ]; then
+          sudo chown -R "$(id -u):$(id -g)" trivy
+        fi

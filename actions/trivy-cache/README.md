@@ -8,6 +8,9 @@ Migrated from
 [numerique-gouv/action-trivy-cache](https://github.com/numerique-gouv/action-trivy-cache)
 (root action).
 
+The `_docker-publish.yml` workflow of this repository runs it when called with
+`trivy_scan: true`. To use it directly:
+
 ```yaml
       - name: Run trivy scan
         uses: suitenumerique/ci/actions/trivy-cache@main

@@ -35,6 +35,21 @@ name: Build and Push Container Image
         required: false
         default: true
         description: Build for linux/amd64 and linux/arm64 when true, linux/amd64 only when false
+      trivy_scan:
+        type: boolean
+        required: false
+        default: true
+        description: >-
+          Scan the image with Trivy before pushing it, failing on HIGH or CRITICAL
+          vulnerabilities. Pass e.g. vars.TRIVY_SCAN_ENABLED == 'true' to control it per repository.
+      trivy_ignore_files:
+        type: string
+        required: false
+        default: ""
+        description: >-
+          Comma-separated .trivyignore files of the calling repository to use
+          (e.g. "./.github/.trivyignore"). A .trivyignore at the repository root
+          is used by Trivy even without it.
     secrets:
       DOCKER_HUB_USER:
         required: true
@@ -70,6 +85,18 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ${{ inputs.image_name }}
+      - name: Run trivy scan
+        if: ${{ inputs.trivy_scan }}
+        uses: suitenumerique/ci/actions/trivy-cache@main # zizmor: ignore[unpinned-uses] same repository
+        with:
+          docker-build-args: >-
+            -f ${{ inputs.file }}
+            ${{ inputs.target != '' && format('--target {0}', inputs.target) || '' }}
+            --build-arg DOCKER_USER=${{ inputs.docker_user }}
+            --build-arg PUBLISH_AS_MIT=false
+          docker-image-name: "docker.io/${{ inputs.image_name }}:${{ github.sha }}"
+          docker-context: ${{ inputs.context }}
+          trivyignores: ${{ inputs.trivy_ignore_files }}
       - name: Build and push
         id: build-push
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
