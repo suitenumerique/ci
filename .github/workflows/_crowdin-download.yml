@@ -1,0 +1,165 @@
+name: Download translations from Crowdin
+
+"on":
+  workflow_call:
+    inputs:
+      crowdin_config:
+        type: string
+        required: false
+        default: crowdin/config.yml
+        description: Path to the Crowdin configuration file
+      crowdin_base_path:
+        type: string
+        required: false
+        default: ../src/
+        description: Value of CROWDIN_BASE_PATH, relative to the configuration file
+      frontend_directory:
+        type: string
+        required: false
+        default: src/frontend
+        description: Frontend project; set to "" to disable
+      frontend_deploy_script:
+        type: string
+        required: false
+        default: i18n:deploy
+        description: package.json script turning the downloaded files into the app's translations. Skipped when not defined.
+      node_version:
+        type: string
+        required: false
+        default: "22"
+        description: Node.js version for the frontend
+      extra_command:
+        type: string
+        required: false
+        default: ""
+        description: Extra command run at the repository root after downloading (e.g. "make i18n-compile")
+      pr_branch:
+        type: string
+        required: false
+        default: i18n/update-translations
+        description: Branch of the pull request with the new translations
+      pr_labels:
+        type: string
+        required: false
+        default: i18n,noChangeLog
+        description: Comma-separated labels of the pull request
+    secrets:
+      CROWDIN_PROJECT_ID:
+        required: true
+      CROWDIN_PERSONAL_TOKEN:
+        required: true
+
+permissions: {}
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the translations branch
+      pull-requests: write # open the pull request
+    steps:
+      - name: Checkout repository # zizmor: ignore[artipacked] the pull request step pushes a branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Create missing source files
+        env:
+          CROWDIN_CONFIG: ${{ inputs.crowdin_config }}
+          CROWDIN_BASE_PATH: ${{ inputs.crowdin_base_path }}
+        run: |
+          # The Crowdin CLI only downloads the translations of source files that exist.
+          # Generated sources (e.g. django.pot) are not committed, so create them empty.
+          base="$(dirname "${CROWDIN_CONFIG}")/${CROWDIN_BASE_PATH}"
+          yq -r '.files[].source' "${CROWDIN_CONFIG}" | while read -r source; do
+            case "${source}" in *'*'*) continue ;; esac # globs match committed files
+            file="${base}/${source#/}"
+            if [ ! -e "${file}" ]; then
+              echo "Creating ${file}"
+              mkdir -p "$(dirname "${file}")"
+              touch "${file}"
+              echo "${file}" >> "${RUNNER_TEMP}/crowdin-placeholders"
+            fi
+          done
+
+      - name: Download translations from Crowdin
+        uses: crowdin/github-action@8868a33591d21088edfc398968173a3b98d51706 # v2.16.2
+        with:
+          config: ${{ inputs.crowdin_config }}
+          upload_sources: false
+          upload_translations: false
+          download_translations: true
+          create_pull_request: false
+          push_translations: false
+          push_sources: false
+        env:
+          CROWDIN_PROJECT_ID: ${{ secrets.CROWDIN_PROJECT_ID }}
+          # Projects name the token variable either way in their Crowdin configuration
+          CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
+          CROWDIN_API_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
+          CROWDIN_BASE_PATH: ${{ inputs.crowdin_base_path }}
+
+      - name: Detect the frontend
+        id: detect
+        env:
+          FRONTEND_DIRECTORY: ${{ inputs.frontend_directory }}
+          FRONTEND_SCRIPT: ${{ inputs.frontend_deploy_script }}
+        run: |
+          frontend=false; yarn=false
+          if [ -n "${FRONTEND_DIRECTORY}" ] && [ -f "${FRONTEND_DIRECTORY}/package.json" ] \
+             && jq -e --arg s "${FRONTEND_SCRIPT}" '.scripts[$s]' "${FRONTEND_DIRECTORY}/package.json" >/dev/null; then
+            frontend=true
+            if [ -f "${FRONTEND_DIRECTORY}/yarn.lock" ]; then yarn=true; fi
+          fi
+          { echo "frontend=${frontend}"; echo "yarn=${yarn}"; } | tee -a "${GITHUB_OUTPUT}"
+
+      - name: Install Node.js
+        if: steps.detect.outputs.frontend == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Generate the frontend translations
+        if: steps.detect.outputs.frontend == 'true'
+        working-directory: ${{ inputs.frontend_directory }}
+        env:
+          USE_YARN: ${{ steps.detect.outputs.yarn }}
+          FRONTEND_SCRIPT: ${{ inputs.frontend_deploy_script }}
+        run: |
+          if [ "${USE_YARN}" = "true" ]; then
+            npx --yes yarn@1.22.22 install --frozen-lockfile
+            npx --yes yarn@1.22.22 run "${FRONTEND_SCRIPT}"
+          else
+            npm ci
+            npm run "${FRONTEND_SCRIPT}"
+          fi
+
+      - name: Run the extra command
+        if: inputs.extra_command != ''
+        env:
+          EXTRA_COMMAND: ${{ inputs.extra_command }}
+        run: bash -c "${EXTRA_COMMAND}"
+
+      - name: Remove the placeholder source files
+        run: |
+          # Don't commit the empty source files created before the download
+          if [ -f "${RUNNER_TEMP}/crowdin-placeholders" ]; then
+            xargs -r rm -f < "${RUNNER_TEMP}/crowdin-placeholders"
+          fi
+
+      - name: Open a pull request with the new translations
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          commit-message: |
+            🌐(i18n) update translated strings
+
+            Update translated files with new translations
+          title: 🌐(i18n) update translated strings
+          body: |
+            ## Purpose
+
+            Update translated strings from Crowdin.
+
+            ## Proposal
+
+            - [x] update translated strings
+          branch: ${{ inputs.pr_branch }}
+          labels: ${{ inputs.pr_labels }}

@@ -1,0 +1,181 @@
+name: Upload sources to Crowdin
+
+"on":
+  workflow_call:
+    inputs:
+      crowdin_config:
+        type: string
+        required: false
+        default: crowdin/config.yml
+        description: Path to the Crowdin configuration file
+      crowdin_base_path:
+        type: string
+        required: false
+        default: ../src/
+        description: Value of CROWDIN_BASE_PATH, relative to the configuration file
+      django_directory:
+        type: string
+        required: false
+        default: src/backend
+        description: >-
+          Django project where `makemessages` generates the .pot file.
+          Skipped when it has no manage.py; set to "" to disable.
+      python_version:
+        type: string
+        required: false
+        default: ""
+        description: Python version; empty reads it from the Django project's pyproject.toml
+      mail_directory:
+        type: string
+        required: false
+        default: src/mail
+        description: MJML project whose templates are built before `makemessages`. Skipped when missing.
+      frontend_directory:
+        type: string
+        required: false
+        default: src/frontend
+        description: Frontend project; set to "" to disable
+      frontend_extract_script:
+        type: string
+        required: false
+        default: i18n:extract
+        description: package.json script generating the frontend source strings. Skipped when not defined.
+      node_version:
+        type: string
+        required: false
+        default: "22"
+        description: Node.js version for the frontend
+      extra_command:
+        type: string
+        required: false
+        default: ""
+        description: Extra command run at the repository root before uploading (e.g. "make i18n-generate")
+      upload_translations:
+        type: boolean
+        required: false
+        default: false
+        description: Also upload existing translations
+      upload_language:
+        type: string
+        required: false
+        default: ""
+        description: Only upload the translations of this language (with upload_translations)
+    secrets:
+      CROWDIN_PROJECT_ID:
+        required: true
+      CROWDIN_PERSONAL_TOKEN:
+        required: true
+
+permissions: {}
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Detect the projects to extract
+        id: detect
+        env:
+          DJANGO_DIRECTORY: ${{ inputs.django_directory }}
+          MAIL_DIRECTORY: ${{ inputs.mail_directory }}
+          FRONTEND_DIRECTORY: ${{ inputs.frontend_directory }}
+          FRONTEND_SCRIPT: ${{ inputs.frontend_extract_script }}
+        run: |
+          django=false; uv=false; mail=false; frontend=false; yarn=false
+          if [ -n "${DJANGO_DIRECTORY}" ] && [ -f "${DJANGO_DIRECTORY}/manage.py" ]; then
+            django=true
+            if [ -f "${DJANGO_DIRECTORY}/uv.lock" ]; then uv=true; fi
+            if [ -n "${MAIL_DIRECTORY}" ] && [ -f "${MAIL_DIRECTORY}/package.json" ]; then mail=true; fi
+          fi
+          if [ -n "${FRONTEND_DIRECTORY}" ] && [ -f "${FRONTEND_DIRECTORY}/package.json" ] \
+             && jq -e --arg s "${FRONTEND_SCRIPT}" '.scripts[$s]' "${FRONTEND_DIRECTORY}/package.json" >/dev/null; then
+            frontend=true
+            if [ -f "${FRONTEND_DIRECTORY}/yarn.lock" ]; then yarn=true; fi
+          fi
+          { echo "django=${django}"; echo "uv=${uv}"; echo "mail=${mail}"
+            echo "frontend=${frontend}"; echo "yarn=${yarn}"; } | tee -a "${GITHUB_OUTPUT}"
+
+      # Backend: generate the .pot file with Django
+      - name: Build or restore the mail templates
+        if: steps.detect.outputs.mail == 'true'
+        uses: suitenumerique/ci/actions/mail-templates@main # zizmor: ignore[unpinned-uses] same repository
+        with:
+          mail_directory: ${{ inputs.mail_directory }}
+
+      - name: Install Python
+        if: steps.detect.outputs.django == 'true'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ inputs.python_version }}
+          python-version-file: ${{ inputs.python_version == '' && format('{0}/pyproject.toml', inputs.django_directory) || '' }}
+
+      - name: Install uv
+        if: steps.detect.outputs.uv == 'true'
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Generate the backend source strings
+        if: steps.detect.outputs.django == 'true'
+        working-directory: ${{ inputs.django_directory }}
+        env:
+          USE_UV: ${{ steps.detect.outputs.uv }}
+          DJANGO_CONFIGURATION: Build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gettext pandoc
+          if [ "${USE_UV}" = "true" ]; then
+            uv sync --locked --all-extras
+            uv run --no-sync python manage.py makemessages -a --keep-pot
+          else
+            pip install --user .
+            python manage.py makemessages -a --keep-pot
+          fi
+
+      # Frontend: generate the source strings with the project's script
+      - name: Install Node.js
+        if: steps.detect.outputs.frontend == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Generate the frontend source strings
+        if: steps.detect.outputs.frontend == 'true'
+        working-directory: ${{ inputs.frontend_directory }}
+        env:
+          USE_YARN: ${{ steps.detect.outputs.yarn }}
+          FRONTEND_SCRIPT: ${{ inputs.frontend_extract_script }}
+        run: |
+          if [ "${USE_YARN}" = "true" ]; then
+            npx --yes yarn@1.22.22 install --frozen-lockfile
+            npx --yes yarn@1.22.22 run "${FRONTEND_SCRIPT}"
+          else
+            npm ci
+            npm run "${FRONTEND_SCRIPT}"
+          fi
+
+      - name: Run the extra command
+        if: inputs.extra_command != ''
+        env:
+          EXTRA_COMMAND: ${{ inputs.extra_command }}
+        run: bash -c "${EXTRA_COMMAND}"
+
+      - name: Upload sources to Crowdin
+        uses: crowdin/github-action@8868a33591d21088edfc398968173a3b98d51706 # v2.16.2
+        with:
+          config: ${{ inputs.crowdin_config }}
+          upload_sources: true
+          upload_translations: ${{ inputs.upload_translations }}
+          upload_language: ${{ inputs.upload_language }}
+          download_translations: false
+          create_pull_request: false
+        env:
+          CROWDIN_PROJECT_ID: ${{ secrets.CROWDIN_PROJECT_ID }}
+          # Projects name the token variable either way in their Crowdin configuration
+          CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
+          CROWDIN_API_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
+          CROWDIN_BASE_PATH: ${{ inputs.crowdin_base_path }}
