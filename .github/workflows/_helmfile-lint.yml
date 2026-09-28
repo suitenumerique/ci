@@ -1,0 +1,58 @@
+name: Helmfile lint
+
+"on":
+  workflow_call:
+    inputs:
+      helmfile:
+        type: string
+        required: false
+        default: src/helm/helmfile.yaml.gotmpl
+        description: Path to the helmfile to lint
+      environments:
+        type: string
+        required: false
+        default: ""
+        description: >-
+          Space-separated helmfile environments to lint (e.g. "dev").
+          Empty lints every environment declared in the helmfile.
+      helmfile_version:
+        type: string
+        required: false
+        default: v1.7.0
+        description: Tag of the ghcr.io/helmfile/helmfile image to use
+
+permissions: {}
+
+jobs:
+  helmfile-lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    container:
+      image: ghcr.io/helmfile/helmfile:${{ inputs.helmfile_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Helmfile lint
+        shell: bash
+        env:
+          HELMFILE: ${{ inputs.helmfile }}
+          ENVIRONMENTS: ${{ inputs.environments }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ENVIRONMENTS}" ]; then
+            # List the keys of the top-level "environments:" block, up to the first "---"
+            ENVIRONMENTS=$(awk '/^environments:/ {in_env=1; next} /^---/ {in_env=0} in_env && /^  [^ ]/ {gsub(/^  /,""); gsub(/:.*$/,""); print}' "${HELMFILE}")
+          fi
+          if [ -z "${ENVIRONMENTS}" ]; then
+            echo "::error::No environment found in ${HELMFILE}; set the 'environments' input"
+            exit 1
+          fi
+          for env in ${ENVIRONMENTS}; do
+            echo "::group::Lint environment ${env}"
+            helmfile -e "${env}" -f "${HELMFILE}" lint
+            echo "::endgroup::"
+          done
