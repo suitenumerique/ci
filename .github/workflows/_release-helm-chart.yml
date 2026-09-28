@@ -1,0 +1,54 @@
+name: Release Helm chart
+
+"on":
+  workflow_call:
+    inputs:
+      charts_dir:
+        type: string
+        required: false
+        default: ./src/helm
+        description: Directory containing the chart(s) to publish
+      cleanup_paths:
+        type: string
+        required: false
+        default: ./src/helm/extra
+        description: Space-separated paths to delete before publishing (e.g. dev-only charts)
+      linting:
+        type: boolean
+        required: false
+        default: true
+        description: Run helm lint before publishing
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Cleanup
+        if: inputs.cleanup_paths != ''
+        env:
+          CLEANUP_PATHS: ${{ inputs.cleanup_paths }}
+        run: |
+          # shellcheck disable=SC2086
+          rm -rf $CLEANUP_PATHS
+
+      - name: Install Helm
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish Helm charts
+        uses: numerique-gouv/helm-gh-pages@2cf477ae49d7c70037ceb1685803f4f7bad9b981 # add-overwrite-option
+        with:
+          charts_dir: ${{ inputs.charts_dir }}
+          linting: ${{ inputs.linting && 'on' || 'off' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
