@@ -1,0 +1,28 @@
+name: 'Security Trivy Scan'
+description: 'Runs Trivy to scan for high and critical vulnerabilities and will fail on detection.'
+inputs:
+  skip-files:
+    description: 'Comma-separated list of file paths to skip in Trivy scan.'
+    required: false
+    default: ''
+  trivyignores:
+    description: 'Comma-separated list of .trivyignore files to use'
+    required: false
+    default: ''
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+      with:
+        format: table
+        scan-type: 'fs'
+        scan-ref: .
+        severity: HIGH,CRITICAL
+        exit-code: 1
+        skip-files: ${{ inputs.skip-files }}
+        trivyignores: ${{ inputs.trivyignores }}
+
