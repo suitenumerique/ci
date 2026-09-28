@@ -1,0 +1,45 @@
+name: Mail templates
+
+inputs:
+  mail_directory:
+    description: Directory of the MJML project
+    default: src/mail
+  output_directory:
+    description: Where the build writes the Django templates
+    default: src/backend/core/templates/mail
+
+runs:
+  using: composite
+  steps:
+    - name: Restore the mail templates
+      id: cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ inputs.output_directory }}
+        key: mail-templates-${{ hashFiles(format('{0}/**', inputs.mail_directory)) }}
+
+    - name: Install Node.js
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      with:
+        node-version: "22"
+
+    - name: Build mails
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: ${{ inputs.mail_directory }}
+      run: |
+        if [ -f yarn.lock ]; then
+          npx --yes yarn@1.22.22 install --frozen-lockfile --ignore-scripts
+          npx --yes yarn@1.22.22 build
+        else
+          npm ci --ignore-scripts
+          npm run build
+        fi
+
+    - name: Cache the mail templates
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ inputs.output_directory }}
+        key: ${{ steps.cache.outputs.cache-primary-key }}
