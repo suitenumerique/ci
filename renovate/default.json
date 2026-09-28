@@ -1,0 +1,41 @@
+{
+    "commitMessageAction": "update",
+    "commitMessagePrefix": "⬆️(dependencies)",
+    "commitMessageTopic": "{{depName}}",
+    "dependencyDashboard": false,
+    "enabledManagers": ["github-actions", "npm", "setup-cfg", "pep621"],
+    "extends": ["config:base", "helpers:pinGitHubActionDigests"],
+    "labels": ["dependencies"],
+    "packageRules": [
+      {
+        "groupName": "GitHub Actions dependencies",
+        "matchManagers": ["github-actions"],
+        "schedule": ["before 7am on monday"],
+        "matchPackagePatterns": ["*"],
+        "minimumReleaseAge": "7 days"
+      },
+      {
+        "groupName": "js dependencies",
+        "matchManagers": ["npm"],
+        "schedule": ["before 7am on monday"],
+        "matchPackagePatterns": ["*"],
+        "minimumReleaseAge": "7 days",
+        "internalChecksFilter": "strict"
+      },
+      {
+        "groupName": "python dependencies",
+        "matchManagers": ["setup-cfg", "pep621"],
+        "schedule": ["before 7am on monday"],
+        "matchPackagePatterns": ["*"],
+        "minimumReleaseAge": "7 days"
+      }
+    ],
+    "prConcurrentLimit": 2,
+    "prHourlyLimit": 2,
+    "prCreation": "not-pending",
+    "schedule": ["before 7am on monday"],
+    "semanticCommits": "disabled",
+    "separateMajorMinor": false,
+    "updateNotScheduled": false,
+    "rebaseWhen": "conflicted"
+  }
