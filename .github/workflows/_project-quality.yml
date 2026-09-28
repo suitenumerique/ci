@@ -1,0 +1,90 @@
+name: Project quality Workflow
+
+"on":
+  workflow_call:
+    inputs:
+      print_check_paths:
+        type: string
+        required: false
+        default: src/backend
+        description: Space-separated paths where added print( statements are forbidden
+      codespell_ignore_words:
+        type: string
+        required: false
+        default: ""
+        description: Comma-separated words codespell should accept (e.g. "afterAll,statics")
+      codespell_skip:
+        type: string
+        required: false
+        default: "./.git/,*.pdf,*.po,*.pot,*.json,uv.lock,yarn.lock,package-lock.json"
+        description: Comma-separated globs codespell should skip
+      shellcheck_enabled:
+        type: boolean
+        required: false
+        default: true
+        description: Run shellcheck on all *.sh files
+
+permissions:
+  contents: read
+
+jobs:
+  lint-git:
+    runs-on: ubuntu-slim
+    permissions:
+      contents: read
+    env:
+      BASE_REF: origin/${{ github.event.pull_request.base.ref }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Show commits
+        run: git log "$BASE_REF"..HEAD
+      - name: Enforce absence of print statements in code
+        if: always() && inputs.print_check_paths != ''
+        env:
+          PRINT_CHECK_PATHS: ${{ inputs.print_check_paths }}
+        run: |
+          # shellcheck disable=SC2086
+          ! git diff "$BASE_REF"..HEAD -- $PRINT_CHECK_PATHS ':(exclude)**/git.yml' | grep -E '^\+.*\bprint\('
+      - name: Check absence of fixup or squash commits
+        if: always()
+        run: |
+          ! git log --format=%s "$BASE_REF"..HEAD | grep -E '^(fixup!|squash!)'
+      - name: Lint commit messages
+        if: always()
+        run: |
+          pip install --user requests gitlint
+          ~/.local/bin/gitlint --commits "$BASE_REF"..HEAD
+
+  lint-spell-mistakes:
+    runs-on: ubuntu-slim
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install codespell
+        run: pip install --user codespell
+      - name: Check for typos
+        env:
+          IGNORE_WORDS: ${{ inputs.codespell_ignore_words }}
+          SKIP: ${{ inputs.codespell_skip }}
+        run: |
+          args=(--check-filenames --skip "$SKIP")
+          if [ -n "$IGNORE_WORDS" ]; then
+            args+=(--ignore-words-list "$IGNORE_WORDS")
+          fi
+          ~/.local/bin/codespell "${args[@]}"
+
+  check-shell-scripts:
+    if: inputs.shellcheck_enabled
+    runs-on: ubuntu-slim
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Check shell scripts
+        run: find . -type f -name '*.sh' -not -path './.git/*' -exec shellcheck --external-sources {} +

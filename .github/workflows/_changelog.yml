@@ -1,0 +1,62 @@
+name: Changelog Workflow
+
+"on":
+  workflow_call:
+    inputs:
+      changelog_path:
+        type: string
+        required: false
+        default: CHANGELOG.md
+        description: Path to the changelog file in the calling repository
+      skip_label:
+        type: string
+        required: false
+        default: noChangeLog
+        description: PR label that skips the "changelog was modified" check
+      max_line_length:
+        type: number
+        required: false
+        default: 80
+        description: Maximum allowed line length (link reference lines are ignored)
+
+permissions:
+  contents: read
+
+jobs:
+  check-changelog:
+    runs-on: ubuntu-slim
+    if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, inputs.skip_label)
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Check that the changelog has been modified in the current branch
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CHANGELOG_PATH: ${{ inputs.changelog_path }}
+        run: |
+          if ! git diff --name-only "$BASE_SHA"..HEAD | grep -qxF "$CHANGELOG_PATH"; then
+            echo "ERROR: $CHANGELOG_PATH was not modified. Add an entry or the '${{ inputs.skip_label }}' label."
+            exit 1
+          fi
+
+  lint-changelog:
+    runs-on: ubuntu-slim
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Check changelog max line length
+        env:
+          CHANGELOG_PATH: ${{ inputs.changelog_path }}
+          MAX_LINE_LENGTH: ${{ inputs.max_line_length }}
+        run: |
+          line_length=$(grep -Ev "^\[.*\]: https://github.com" "$CHANGELOG_PATH" | wc -L)
+          if [ "$line_length" -ge "$MAX_LINE_LENGTH" ]; then
+            echo "ERROR: $CHANGELOG_PATH has lines of $MAX_LINE_LENGTH characters or more."
+            exit 1
+          fi
