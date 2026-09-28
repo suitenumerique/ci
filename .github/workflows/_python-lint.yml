@@ -65,6 +65,7 @@ jobs:
           APT_PACKAGES: ${{ inputs.apt_packages }}
         run: |
           sudo apt-get update
+          # shellcheck disable=SC2086 # split the package list on purpose
           sudo apt-get install -y --no-install-recommends $APT_PACKAGES
 
       - name: Install Python
@@ -81,6 +82,7 @@ jobs:
         env:
           UV_SYNC_ARGS: ${{ inputs.uv_sync_args }}
         run: |
+          # shellcheck disable=SC2086 # split the arguments on purpose
           uv sync $UV_SYNC_ARGS
 
       - name: Check code formatting with ruff
@@ -96,6 +98,7 @@ jobs:
         env:
           PYLINT_TARGETS: ${{ inputs.pylint_targets }}
         run: |
+          # shellcheck disable=SC2086 # split the targets on purpose
           uv run --no-sync pylint $PYLINT_TARGETS
 
       - name: Run extra check
@@ -103,4 +106,5 @@ jobs:
         env:
           EXTRA_COMMAND: ${{ inputs.extra_command }}
         run: |
+          # shellcheck disable=SC2086 # split the command on purpose
           uv run --no-sync $EXTRA_COMMAND
