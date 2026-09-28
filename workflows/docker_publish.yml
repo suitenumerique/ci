@@ -67,8 +67,9 @@ jobs:
         if: ${{ vars.TRIVY_SCAN_ENABLED }} == 'true'
         uses: numerique-gouv/action-trivy-cache@main
         with:
-          docker-build-args: "--target ${{ inputs.target }} -f ${{ inputs.file }}"
+          docker-build-args: "${{ inputs.target != '' && format('--target {0} ', inputs.target) || '' }}-f ${{ inputs.file }}"
           docker-image-name: "docker.io/${{ inputs.image_name }}:${{ github.sha }}"
+          docker-context: ${{ inputs.context }}
           trivyignores: ./.github/.trivyignore
       - name: Build and push (multi-arch)
         id: build-push
