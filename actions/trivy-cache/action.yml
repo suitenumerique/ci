@@ -24,11 +24,11 @@ runs:
       env:
         DOCKER_BUILD_ARGS: ${{ inputs.docker-build-args }}
         DOCKER_IMAGE_NAME: ${{ inputs.docker-image-name }}
-        DOCKER_CONTEXT: ${{ inputs.docker-context }}
+        BUILD_CONTEXT: ${{ inputs.docker-context }}
       run: |
         # The build args are a list of options, split on purpose
         # shellcheck disable=SC2086
-        docker build ${DOCKER_BUILD_ARGS} -t "${DOCKER_IMAGE_NAME}" "${DOCKER_CONTEXT}"
+        docker build ${DOCKER_BUILD_ARGS} -t "${DOCKER_IMAGE_NAME}" "${BUILD_CONTEXT}"
     -
       name: Get Date
       id: get-date
