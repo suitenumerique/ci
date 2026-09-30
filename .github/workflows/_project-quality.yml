@@ -27,6 +27,10 @@ name: Project quality Workflow
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.pull_request.number || github.sha }}-project-quality
+  cancel-in-progress: true
+
 jobs:
   lint-git:
     runs-on: ubuntu-slim
