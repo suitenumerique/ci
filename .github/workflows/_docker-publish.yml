@@ -42,6 +42,13 @@ name: Build and Push Container Image
         description: >-
           Scan the image with Trivy before pushing it, failing on HIGH or CRITICAL
           vulnerabilities. Pass e.g. vars.TRIVY_SCAN_ENABLED == 'true' to control it per repository.
+      trivy_continue_on_error:
+        type: boolean
+        default: false
+        description: >-
+          Report HIGH or CRITICAL vulnerabilities found by the Trivy scan without
+          failing the job, so the image is still built and pushed. Only has an
+          effect when trivy_scan is true.
       trivy_ignore_files:
         type: string
         required: false
@@ -87,6 +94,7 @@ jobs:
           images: ${{ inputs.image_name }}
       - name: Run trivy scan
         if: ${{ inputs.trivy_scan }}
+        continue-on-error: ${{ inputs.trivy_continue_on_error }}
         uses: suitenumerique/ci/actions/trivy-cache@main # zizmor: ignore[unpinned-uses] same repository
         with:
           docker-build-args: >-
