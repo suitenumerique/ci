@@ -104,7 +104,7 @@ jobs:
       # Backend: generate the .pot file with Django
       - name: Build or restore the mail templates
         if: steps.detect.outputs.mail == 'true'
-        uses: suitenumerique/ci/actions/mail-templates@main # zizmor: ignore[unpinned-uses] same repository
+        uses: suitenumerique/ci/actions/mail-templates@v0.0.1
         with:
           mail_directory: ${{ inputs.mail_directory }}
 

@@ -95,7 +95,7 @@ jobs:
       - name: Run trivy scan
         if: ${{ inputs.trivy_scan }}
         continue-on-error: ${{ inputs.trivy_continue_on_error }}
-        uses: suitenumerique/ci/actions/trivy-cache@main # zizmor: ignore[unpinned-uses] same repository
+        uses: suitenumerique/ci/actions/trivy-cache@v0.0.1 # zizmor: ignore[unpinned-uses] same repository
         with:
           docker-build-args: >-
             -f ${{ inputs.file }}
