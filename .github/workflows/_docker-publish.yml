@@ -57,6 +57,13 @@ name: Build and Push Container Image
           Comma-separated .trivyignore files of the calling repository to use
           (e.g. "./.github/.trivyignore"). A .trivyignore at the repository root
           is used by Trivy even without it.
+      cache:
+        type: boolean
+        required: false
+        default: true
+        description: >-
+          Reuse unchanged image layers between runs through the GitHub Actions
+          cache (one cache scope per image name and target).
     secrets:
       DOCKER_HUB_USER:
         required: true
@@ -73,6 +80,7 @@ jobs:
       contents: read
     env:
       BUILD_PLATFORMS: ${{ inputs.is_multi_platform && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+      CACHE_SCOPE: ${{ inputs.image_name }}${{ inputs.target != '' && format('-{0}', inputs.target) || '' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -122,6 +130,8 @@ jobs:
           provenance: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: ${{ inputs.cache && format('type=gha,scope={0}', env.CACHE_SCOPE) || '' }}
+          cache-to: ${{ inputs.cache && format('type=gha,mode=max,scope={0},ignore-error=true', env.CACHE_SCOPE) || '' }}
       - name: Cleanup Docker after build
         if: always()
         run: |
