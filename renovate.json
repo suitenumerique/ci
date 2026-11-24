@@ -3,6 +3,7 @@
   "extends": ["local>suitenumerique/ci//renovate/default"],
   "dependencyDashboard": true,
   "enabledManagers": ["github-actions"],
+  "prCreation": "immediate",
   "timezone": "Europe/Paris",
   "packageRules": [
     {
