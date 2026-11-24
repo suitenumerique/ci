@@ -110,14 +110,14 @@ jobs:
 
       - name: Install Python
         if: steps.detect.outputs.django == 'true'
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ inputs.python_version }}
           python-version-file: ${{ inputs.python_version == '' && format('{0}/pyproject.toml', inputs.django_directory) || '' }}
 
       - name: Install uv
         if: steps.detect.outputs.uv == 'true'
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - name: Generate the backend source strings
         if: steps.detect.outputs.django == 'true'
@@ -139,7 +139,7 @@ jobs:
       # Frontend: generate the source strings with the project's script
       - name: Install Node.js
         if: steps.detect.outputs.frontend == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ inputs.node_version }}
 
@@ -165,7 +165,7 @@ jobs:
         run: bash -c "${EXTRA_COMMAND}"
 
       - name: Upload sources to Crowdin
-        uses: crowdin/github-action@8868a33591d21088edfc398968173a3b98d51706 # v2.16.2
+        uses: crowdin/github-action@d651c77756acbe11a31d77a6fb79d8a239e1e05a # v3.6.0
         with:
           config: ${{ inputs.crowdin_config }}
           upload_sources: true
