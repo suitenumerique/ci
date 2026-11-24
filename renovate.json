@@ -1,6 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["local>suitenumerique/ci//renovate/default"],
+  "dependencyDashboard": true,
   "enabledManagers": ["github-actions"],
   "timezone": "Europe/Paris",
   "packageRules": [
