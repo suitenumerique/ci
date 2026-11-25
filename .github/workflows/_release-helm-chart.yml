@@ -18,6 +18,28 @@ name: Release Helm chart
         required: false
         default: true
         description: Run helm lint before publishing
+      prerelease_branch_prefix:
+        type: string
+        required: false
+        default: release/
+        description: >-
+          On a branch with this prefix, publish <version>-rc.<run number>
+          instead of the version of Chart.yaml. Empty to disable.
+      override_releases:
+        type: boolean
+        required: false
+        default: false
+        description: Republish a chart version that is already published
+      pages_branch:
+        type: string
+        required: false
+        default: gh-pages
+        description: Branch holding the chart repository
+      charts_url:
+        type: string
+        required: false
+        default: ""
+        description: Chart repository URL, defaults to https://<owner>.github.io/<repository>
 
 permissions:
   contents: read
@@ -26,13 +48,16 @@ jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # push the packaged charts to the pages branch
+    # Two runs pushing to the pages branch at once would race on index.yaml
+    concurrency:
+      group: release-helm-chart-${{ github.repository }}
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0
 
       - name: Cleanup
         if: inputs.cleanup_paths != ''
@@ -47,9 +72,99 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish Helm charts
-        uses: numerique-gouv/helm-gh-pages@2cf477ae49d7c70037ceb1685803f4f7bad9b981 # add-overwrite-option
-        with:
-          charts_dir: ${{ inputs.charts_dir }}
-          linting: ${{ inputs.linting && 'on' || 'off' }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Package charts
+        env:
+          CHARTS_DIR: ${{ inputs.charts_dir }}
+          LINTING: ${{ inputs.linting }}
+          PRERELEASE_BRANCH_PREFIX: ${{ inputs.prerelease_branch_prefix }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/charts"
+          mkdir -p "${out}"
+          packaged=0
+          for chart in "${CHARTS_DIR}"/*/; do
+            [ -f "${chart}Chart.yaml" ] || continue
+            version=$(helm show chart "${chart}" | awk '/^version:/ {print $2}')
+            if [ "${REF_TYPE}" = tag ]; then
+              # A tag publishes the chart whose version it names, and only that one
+              if [ "${REF_NAME}" != "v${version}" ]; then
+                echo "Skipping ${chart}: version ${version} is not tag ${REF_NAME}"
+                continue
+              fi
+            elif [ -n "${PRERELEASE_BRANCH_PREFIX}" ] \
+              && [[ "${REF_NAME}" == "${PRERELEASE_BRANCH_PREFIX}"* ]]; then
+              version="${version}-rc.${RUN_NUMBER}"
+            fi
+            helm dependency update "${chart}"
+            if [ "${LINTING}" = true ]; then
+              helm lint "${chart}"
+            fi
+            helm package "${chart}" --version "${version}" --destination "${out}"
+            packaged=$((packaged + 1))
+          done
+          if [ "${packaged}" -eq 0 ] && [ "${REF_TYPE}" = tag ] \
+            && [[ "${REF_NAME}" != *-* ]]; then
+            echo "::error::No chart in ${CHARTS_DIR} has the version of tag ${REF_NAME}"
+            exit 1
+          fi
+
+      - name: Publish charts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PAGES_BRANCH: ${{ inputs.pages_branch }}
+          CHARTS_URL: ${{ inputs.charts_url }}
+          OVERRIDE_RELEASES: ${{ inputs.override_releases }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/charts"
+          pages="${RUNNER_TEMP}/pages"
+          shopt -s nullglob
+          packages=("${out}"/*.tgz)
+          if [ "${#packages[@]}" -eq 0 ]; then
+            echo "Nothing to publish"
+            exit 0
+          fi
+
+          # Same mechanism as actions/checkout: the token never lands in .git/config
+          auth=$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 -w0)
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="http.${SERVER_URL}/.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${auth}"
+          git clone --depth 1 --branch "${PAGES_BRANCH}" \
+            "${SERVER_URL}/${GITHUB_REPOSITORY}.git" "${pages}"
+
+          new=()
+          for pkg in "${packages[@]}"; do
+            name=$(basename "${pkg}")
+            if [ -e "${pages}/${name}" ] && [ "${OVERRIDE_RELEASES}" != true ]; then
+              echo "${name} is already published, skipping it"
+              rm "${out}/${name}"
+            else
+              new+=("${name}")
+            fi
+          done
+          if [ "${#new[@]}" -eq 0 ]; then
+            echo "Nothing new to publish"
+            exit 0
+          fi
+
+          url="${CHARTS_URL:-https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}}"
+          # Index only the new packages, then merge: re-indexing the whole
+          # branch would rewrite the dates of every published version
+          if [ -f "${pages}/index.yaml" ]; then
+            helm repo index "${out}" --url "${url}" --merge "${pages}/index.yaml"
+          else
+            helm repo index "${out}" --url "${url}"
+          fi
+          mv -f "${out}"/*.tgz "${out}/index.yaml" "${pages}/"
+
+          cd "${pages}"
+          git add -- "${new[@]}" index.yaml
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "Publish ${new[*]}"
+          git push origin "HEAD:${PAGES_BRANCH}"
